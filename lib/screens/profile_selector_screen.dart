@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'login_screen.dart';
 import 'profile_setup.dart';
 import 'home_screen.dart';
 import '../widgets/arovia_background.dart';
@@ -25,7 +26,11 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
 
   Future<void> _loadProfiles() async {
     final prefs = await SharedPreferences.getInstance();
-    final String? profilesString = prefs.getString('profiles');
+    final String? currentUserId = prefs.getString('currentUserId');
+    
+    if (currentUserId == null) return;
+    
+    final String? profilesString = prefs.getString('profiles_$currentUserId');
 
     if (profilesString != null) {
       final List decoded = jsonDecode(profilesString);
@@ -75,14 +80,18 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
     if (shouldDelete != true) return;
 
     final prefs = await SharedPreferences.getInstance();
-    final profilesString = prefs.getString('profiles');
+    final String? currentUserId = prefs.getString('currentUserId');
+    
+    if (currentUserId == null) return;
+    
+    final profilesString = prefs.getString('profiles_$currentUserId');
 
     if (profilesString == null) return;
 
     List profilesList = jsonDecode(profilesString);
     profilesList.removeWhere((p) => p['id'] == profileId);
 
-    await prefs.setString('profiles', jsonEncode(profilesList));
+    await prefs.setString('profiles_$currentUserId', jsonEncode(profilesList));
 
     // If deleted profile was active → clear it
     final activeId = prefs.getString('activeProfileId');
@@ -93,17 +102,67 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
     _loadProfiles(); // refresh UI
   }
 
+  Future<void> _logout() async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'Logout',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout != true) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('currentUserId');
+    await prefs.remove('activeProfileId');
+
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: Colors.white, // 👈 IMPORTANT
 
       appBar: AppBar(
-        title: const Text('Select Profile'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-      ),
+        backgroundColor: Colors.white,
+        elevation: 1,
+        centerTitle: true,
 
+        title: const Text(
+          "Select Profile 👤",
+          style: TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.red),
+            tooltip: 'Logout',
+            onPressed: _logout,
+          ),
+        ],
+      ),
       body: AroviaBackground(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -121,16 +180,18 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                     final profile = profiles[index];
 
                     return Card(
-                      margin: const EdgeInsets.symmetric(
-                          vertical: 6),
+                      elevation: 3,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       child: ListTile(
-                        title: Text(profile['name']),
-                        subtitle:
-                            Text('Age: ${profile['age']}'),
-
+                        title: Text(
+                          profile['name'],
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text("Age: ${profile['age']}"),
                         onTap: () =>
                             _selectProfile(profile['id']),
-
                         trailing: IconButton(
                           icon: const Icon(
                             Icons.delete,
@@ -147,17 +208,23 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
       ),
 
       floatingActionButton: FloatingActionButton(
+        backgroundColor: Color(0xFF4CAF50),
         child: const Icon(Icons.add),
         onPressed: () async {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) =>
-                  const ProfileSetupScreen(),
-            ),
-          );
+          final prefs = await SharedPreferences.getInstance();
+          final String? currentUserId = prefs.getString('currentUserId');
+          
+          if (currentUserId != null) {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    ProfileSetupScreen(userId: currentUserId),
+              ),
+            );
 
-          _loadProfiles(); // refresh after adding
+            _loadProfiles(); // refresh after adding
+          }
         },
       ),
     );

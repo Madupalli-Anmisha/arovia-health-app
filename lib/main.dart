@@ -2,10 +2,40 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'screens/login_screen.dart';
 import 'screens/profile_setup.dart';
 import 'screens/profile_selector_screen.dart';
+import 'services/notification_service.dart';
+import 'services/smart_notification_service.dart';
+import 'services/step_tracker_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    await NotificationService.init();
+  } catch (e) {
+    print('Error initializing NotificationService: $e');
+  }
+
+  // Initialize other services in background (don't block app startup)
+  Future.delayed(const Duration(seconds: 1), () async {
+    try {
+      await SmartNotificationService.initializeNotifications();
+      await SmartNotificationService.scheduleDailyNotifications();
+    } catch (e) {
+      print('Error initializing SmartNotificationService: $e');
+    }
+  });
+
+  Future.delayed(const Duration(seconds: 1), () async {
+    try {
+      await StepTrackerService.initStepTracking();
+    } catch (e) {
+      print('Error initializing StepTrackerService: $e');
+    }
+  });
+
   runApp(const MyApp());
 }
 
@@ -40,24 +70,55 @@ class _SplashDeciderState extends State<SplashDecider> {
   }
 
   Future<void> _decideStartScreen() async {
-    final prefs = await SharedPreferences.getInstance();
+    try {
+      final prefs = await SharedPreferences.getInstance();
 
-    final String? profilesString = prefs.getString('profiles');
-    final List profiles =
-        profilesString != null ? jsonDecode(profilesString) : [];
+      // Check if user is logged in
+      final String? currentUserId = prefs.getString('currentUserId');
 
-    if (profiles.isEmpty) {
-      // No profiles yet
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const ProfileSetupScreen()),
-      );
-    } else {
-      // Profiles exist → choose profile
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const ProfileSelectionScreen()),
-      );
+      if (currentUserId == null) {
+        // User not logged in → show login screen
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+          );
+        }
+      } else {
+        // User is logged in → check for profiles
+        final String? profilesString = prefs.getString('profiles_$currentUserId');
+        final List profiles =
+            profilesString != null ? jsonDecode(profilesString) : [];
+
+        if (profiles.isEmpty) {
+          // No profiles yet → create profile
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ProfileSetupScreen(userId: currentUserId),
+              ),
+            );
+          }
+        } else {
+          // Profiles exist → choose profile
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const ProfileSelectionScreen()),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      print('Error in _decideStartScreen: $e');
+      // Show error screen or fallback to login
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+        );
+      }
     }
   }
 

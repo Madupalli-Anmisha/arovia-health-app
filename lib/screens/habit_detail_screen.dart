@@ -322,8 +322,12 @@ class _HabitDetailScreenState
     final prefs =
         await SharedPreferences.getInstance();
 
+    final String? currentUserId = prefs.getString('currentUserId');
+    
+    if (currentUserId == null) return;
+
     final profilesString =
-        prefs.getString('profiles');
+        prefs.getString('profiles_$currentUserId');
 
     final activeProfileId =
         prefs.getString('activeProfileId');
@@ -372,8 +376,12 @@ class _HabitDetailScreenState
     final prefs =
         await SharedPreferences.getInstance();
 
+    final String? currentUserId = prefs.getString('currentUserId');
+    
+    if (currentUserId == null) return;
+
     final profilesString =
-        prefs.getString('profiles');
+        prefs.getString('profiles_$currentUserId');
 
     final activeProfileId =
         prefs.getString('activeProfileId');
@@ -439,7 +447,7 @@ class _HabitDetailScreenState
     updateWorkoutProgress(profile);
 
     await prefs.setString(
-        'profiles', jsonEncode(profiles));
+        'profiles_$currentUserId', jsonEncode(profiles));
 
     if (mounted) Navigator.pop(context);
   }

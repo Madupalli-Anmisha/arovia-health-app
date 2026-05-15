@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/arovia_background.dart';
 import '../widgets/goal_chip.dart';
+import 'home_screen.dart';
 class ProfileSetupScreen extends StatefulWidget {
   final bool isEdit;
+  final String? userId;
 
-  const ProfileSetupScreen({super.key, this.isEdit = false});
+  const ProfileSetupScreen({super.key, this.isEdit = false, this.userId});
 
   @override
   State<ProfileSetupScreen> createState() =>
@@ -28,12 +30,6 @@ class _ProfileSetupScreenState
     'Daily Routine',
     'General Wellness',
   ];
-
-  final List<String> avatars = [
-    '👨', '👩', '🧒', '👧', '👵', '🧑'
-  ];
-
-  String selectedAvatar = '👤';
   List<String> selectedGoals = [];
   String? activeProfileId;
 
@@ -75,9 +71,10 @@ class _ProfileSetupScreenState
   Future<void> _loadProfileForEdit() async {
     final prefs =
         await SharedPreferences.getInstance();
+    final currentUserId = widget.userId ?? prefs.getString('currentUserId');
 
     final profilesString =
-        prefs.getString('profiles');
+        prefs.getString('profiles_$currentUserId');
     activeProfileId =
         prefs.getString('activeProfileId');
 
@@ -94,8 +91,6 @@ class _ProfileSetupScreenState
       nameController.text = profile['name'];
       ageController.text =
           profile['age'].toString();
-      selectedAvatar =
-          profile['avatar'] ?? '👤';
       selectedGoals =
           List<String>.from(profile['goals']);
       selectedHealthConditions =
@@ -119,8 +114,10 @@ class _ProfileSetupScreenState
 
     final prefs =
         await SharedPreferences.getInstance();
+    final currentUserId = widget.userId ?? prefs.getString('currentUserId');
+    
     final profilesString =
-        prefs.getString('profiles');
+        prefs.getString('profiles_$currentUserId');
 
     List profiles = profilesString != null
         ? jsonDecode(profilesString)
@@ -135,7 +132,6 @@ class _ProfileSetupScreenState
       profiles[index] = {
         "id": activeProfileId,
         "name": nameController.text.trim(),
-        "avatar": selectedAvatar,
         "age":
             int.parse(ageController.text),
         "goals": selectedGoals,
@@ -160,7 +156,6 @@ class _ProfileSetupScreenState
             .toString(),
         "name":
             nameController.text.trim(),
-        "avatar": selectedAvatar,
         "age":
             int.parse(ageController.text),
         "goals": selectedGoals,
@@ -194,9 +189,12 @@ class _ProfileSetupScreenState
     }
 
     await prefs.setString(
-        'profiles', jsonEncode(profiles));
+        'profiles_$currentUserId', jsonEncode(profiles));
 
-    Navigator.pop(context);
+    Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(builder: (_) => HomeScreen()),
+  );
   }
 
   @override
@@ -209,12 +207,20 @@ class _ProfileSetupScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: Colors.white, // 👈 IMPORTANT
 
       appBar: AppBar(
-        title: Text(widget.isEdit ? 'Edit Profile' : 'Add Profile'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+        backgroundColor: Colors.white,
+        elevation: 1,
+        centerTitle: true,
+
+        title: Text(
+          widget.isEdit ? "Edit Profile ✏️" : "Create Profile 👤",
+          style: const TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ),
 
       body: AroviaBackground(
@@ -261,42 +267,6 @@ class _ProfileSetupScreenState
                 ),
 
                 const SizedBox(height: 20),
-
-                /// AVATAR
-                const Text(
-                  'Choose Avatar',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-
-                const SizedBox(height: 10),
-
-                Wrap(
-                  spacing: 12,
-                  children: avatars.map((avatar) {
-                    final isSelected = selectedAvatar == avatar;
-
-                    return GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          selectedAvatar = avatar;
-                        });
-                      },
-                      child: CircleAvatar(
-                        radius: 24,
-                        backgroundColor: isSelected
-                            ? Colors.green
-                            : Colors.grey.shade300,
-                        child: Text(
-                          avatar,
-                          style: const TextStyle(fontSize: 22),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
 
                 const SizedBox(height: 20),
 

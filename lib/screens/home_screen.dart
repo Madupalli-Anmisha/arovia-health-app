@@ -6,11 +6,17 @@ import 'profile_setup.dart';
 import 'profile_selector_screen.dart';
 import 'add_habit_screen.dart';
 import 'habit_detail_screen.dart';
-import 'habit_history_screen.dart';
+import 'food_tracking_screen.dart';
+import 'habit_analytics_screen.dart';
+import 'period_tracker_screen.dart';
 import '../widgets/arovia_background.dart';
 import '../widgets/dashboard_stats.dart';
 import '../widgets/habit_card.dart';
 import '../widgets/weekly_progress.dart';
+import '../services/language_service.dart';
+import '../services/step_tracker_service.dart';
+import '../services/food_service.dart';
+import '../services/weekly_report_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -19,13 +25,100 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late Future<Map<String, dynamic>> _profileFuture;
+  late TabController _tabController;
+  String currentLanguage = 'en';
 
   @override
   void initState() {
     super.initState();
     _profileFuture = _loadActiveProfile();
+    _tabController = TabController(length: 3, vsync: this);
+    _loadLanguage();
+    // Save daily data in background (non-blocking)
+    Future.delayed(const Duration(milliseconds: 500), _saveDailyData);
+  }
+
+  // Save daily tracking data to analytics
+  Future<void> _saveDailyData() async {
+    try {
+      final steps = await StepTrackerService.getTodaySteps();
+      final calories = await FoodService.getTodayCalories();
+      final entries = await FoodService.getTodayEntries();
+      
+      int fiber = entries.fold(0, (sum, entry) => sum + entry.fiber);
+      int junkCount = entries.where((e) => e.foodType == 'junk').length;
+      int healthyCount = entries.where((e) => e.foodType == 'healthy').length;
+      
+      // Save step history
+      await StepTrackerService.saveStepHistory(steps);
+      
+      // Save daily data to weekly report
+      await WeeklyReportService.saveDailyData(
+        steps: steps,
+        calories: calories,
+        fiber: fiber,
+        junkCount: junkCount,
+        healthyCount: healthyCount,
+      );
+    } catch (e) {
+      print('Error saving daily data: $e');
+    }
+  }
+  Future<void> _loadLanguage() async {
+    final lang = await LanguageService.getLanguage();
+    setState(() {
+      currentLanguage = lang;
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  void _showLanguageDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(LanguageService.translate('language', currentLanguage)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: const Text('English'),
+              leading: Radio<String>(
+                value: 'en',
+                groupValue: currentLanguage,
+                onChanged: (value) async {
+                  await LanguageService.setLanguage('en');
+                  setState(() {
+                    currentLanguage = 'en';
+                  });
+                  Navigator.pop(context);
+                },
+              ),
+            ),
+            ListTile(
+              title: const Text('తెలుగు (Telugu)'),
+              leading: Radio<String>(
+                value: 'te',
+                groupValue: currentLanguage,
+                onChanged: (value) async {
+                  await LanguageService.setLanguage('te');
+                  setState(() {
+                    currentLanguage = 'te';
+                  });
+                  Navigator.pop(context);
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String getTodayDate() {
@@ -46,6 +139,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _validateAndSaveStreaks(
       List profiles, int profileIndex) async {
     final prefs = await SharedPreferences.getInstance();
+    final String? currentUserId = prefs.getString('currentUserId');
+    
+    if (currentUserId == null) return;
+    
     final habits = profiles[profileIndex]['habits'];
     final now = DateTime.now();
 
@@ -65,14 +162,18 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (updated) {
-      await prefs.setString('profiles', jsonEncode(profiles));
+      await prefs.setString('profiles_$currentUserId', jsonEncode(profiles));
     }
   }
 
   Future<Map<String, dynamic>> _loadActiveProfile() async {
     final prefs = await SharedPreferences.getInstance();
     final activeProfileId = prefs.getString('activeProfileId');
-    final profilesString = prefs.getString('profiles');
+    final String? currentUserId = prefs.getString('currentUserId');
+    
+    if (currentUserId == null) return {};
+    
+    final profilesString = prefs.getString('profiles_$currentUserId');
 
     if (activeProfileId == null || profilesString == null) return {};
 
@@ -90,7 +191,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> markHabitAsDone(int habitIndex) async {
     final prefs = await SharedPreferences.getInstance();
-    final profilesString = prefs.getString('profiles');
+    final String? currentUserId = prefs.getString('currentUserId');
+    
+    if (currentUserId == null) return;
+    
+    final profilesString = prefs.getString('profiles_$currentUserId');
     final activeProfileId = prefs.getString('activeProfileId');
 
     if (profilesString == null || activeProfileId == null) return;
@@ -129,7 +234,7 @@ class _HomeScreenState extends State<HomeScreen> {
     habit['completedDates'].add(today);
     habit['lastDone'] = DateTime.now().toIso8601String();
 
-    await prefs.setString('profiles', jsonEncode(profiles));
+    await prefs.setString('profiles_$currentUserId', jsonEncode(profiles));
 
     setState(() {
       _profileFuture = _loadActiveProfile();
@@ -164,7 +269,11 @@ class _HomeScreenState extends State<HomeScreen> {
     if (confirm != true) return;
 
     final prefs = await SharedPreferences.getInstance();
-    final profilesString = prefs.getString('profiles');
+    final String? currentUserId = prefs.getString('currentUserId');
+    
+    if (currentUserId == null) return;
+    
+    final profilesString = prefs.getString('profiles_$currentUserId');
     final activeProfileId = prefs.getString('activeProfileId');
 
     if (profilesString == null || activeProfileId == null)
@@ -179,7 +288,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     profiles[profileIndex]['habits'].removeAt(habitIndex);
 
-    await prefs.setString('profiles', jsonEncode(profiles));
+    await prefs.setString('profiles_$currentUserId', jsonEncode(profiles));
 
     setState(() {
       _profileFuture = _loadActiveProfile();
@@ -214,7 +323,11 @@ class _HomeScreenState extends State<HomeScreen> {
     if (shouldDelete != true) return;
 
     final prefs = await SharedPreferences.getInstance();
-    final profilesString = prefs.getString('profiles');
+    final String? currentUserId = prefs.getString('currentUserId');
+    
+    if (currentUserId == null) return;
+    
+    final profilesString = prefs.getString('profiles_$currentUserId');
     final activeId = prefs.getString('activeProfileId');
 
     if (profilesString == null || activeId == null) return;
@@ -222,7 +335,7 @@ class _HomeScreenState extends State<HomeScreen> {
     List profiles = jsonDecode(profilesString);
     profiles.removeWhere((p) => p['id'] == activeId);
 
-    await prefs.setString('profiles', jsonEncode(profiles));
+    await prefs.setString('profiles_$currentUserId', jsonEncode(profiles));
     await prefs.remove('activeProfileId');
 
     Navigator.pushAndRemoveUntil(
@@ -239,14 +352,63 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: Colors.transparent,
 
       appBar: AppBar(
-        title: const Text('Arovia'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+        backgroundColor: const Color(0xFFF4FBF6),
+        elevation: 1,
+        centerTitle: true,
+
+        title: const Text(
+          "Arovia 🌿",
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.black,
+            letterSpacing: 1,
+          ),
+        ),
+
+        iconTheme: const IconThemeData(
+          color: Colors.black,
+        ),
+
+        bottom: TabBar(
+          controller: _tabController,
+          labelColor: Colors.green,
+          unselectedLabelColor: Colors.grey,
+          indicatorColor: Colors.green,
+          tabs: const [
+            Tab(icon: Icon(Icons.check_circle), text: 'Habits'),
+            Tab(icon: Icon(Icons.restaurant), text: 'Food'),
+            Tab(icon: Icon(Icons.analytics), text: 'Analytics'),
+          ],
+        ),
+
         actions: [
+
+          /// � Period Tracker
+          IconButton(
+            icon: const Icon(Icons.favorite),
+            tooltip: "Period Tracker",
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const PeriodTrackerScreen(),
+                ),
+              );
+            },
+          ),
+
+          /// �🌐 Language
+          IconButton(
+            icon: const Icon(Icons.language),
+            tooltip: "Language",
+            onPressed: _showLanguageDialog,
+          ),
 
           /// ✏️ Edit Profile
           IconButton(
-            icon: const Icon(Icons.edit),
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: "Edit Profile",
             onPressed: () async {
               await Navigator.push(
                 context,
@@ -264,16 +426,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
           /// 🗑 Delete Profile
           IconButton(
-            icon: const Icon(Icons.delete),
+            icon: const Icon(Icons.delete_outline),
+            tooltip: "Delete Profile",
             onPressed: _deleteActiveProfile,
           ),
 
           /// 🚪 Logout
           IconButton(
             icon: const Icon(Icons.logout),
+            tooltip: "Logout",
             onPressed: () async {
-              final prefs =
-                  await SharedPreferences.getInstance();
+              final prefs = await SharedPreferences.getInstance();
               await prefs.remove('activeProfileId');
 
               Navigator.pushAndRemoveUntil(
@@ -290,206 +453,277 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
 
       body: AroviaBackground(
-        child: FutureBuilder<Map<String, dynamic>>(
-          future: _profileFuture,
-          builder: (context, snapshot) {
-
-            if (snapshot.connectionState ==
-                ConnectionState.waiting) {
-              return const Center(
-                  child: CircularProgressIndicator());
-            }
-
-            if (!snapshot.hasData ||
-                snapshot.data!.isEmpty) {
-              return const Center(
-                  child: Text('No active profile'));
-            }
-
-            final profile = snapshot.data!;
-            final habits = profile['habits'] ?? [];
-            final today = getTodayDate();
-
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-
-                  /// Greeting
-                  Text(
-                    "Hello ${profile['name']} 🌿",
-                    style: const TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  /// Dashboard Stats
-                  DashboardStats(
-                    streak: habits.fold(0, (max, h) => h['streak'] > max ? h['streak'] : max),
-                    level: 2,
-                    totalDays: habits.length,
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  WeeklyProgress(
-                    weekData: generateWeeklyProgress(profile["habits"]),
-                  ),
-
-                  /// Habit Title
-                  const Text(
-                    "Today's Habits",
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-
-                  
-                  const SizedBox(height: 12),
-
-                  /// Habit List
-                  ListView(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    children: [
-                        if (habits.isEmpty)
-                          const Text('No habits added yet')
-                        else
-                          ...habits.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      final h = entry.value;
-                      final isDoneToday =
-                          h['completedDates']
-                              .contains(today);
-
-                      return Dismissible(
-                        key: ValueKey(h['id']),
-                        direction:
-                            DismissDirection.endToStart,
-                        background: Container(
-                          color: Colors.red,
-                          alignment:
-                              Alignment.centerRight,
-                          padding:
-                              const EdgeInsets.symmetric(
-                                  horizontal: 20),
-                          child: const Icon(
-                              Icons.delete,
-                              color: Colors.white),
-                        ),
-                        confirmDismiss: (_) async {
-                          await deleteHabit(index);
-                          return false;
-                        },
-                        child: HabitCard(
-                          habitName: h['title'],
-                          streak: h['streak'],
-                          completed: isDoneToday,
-                          onTap: () async {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => HabitDetailScreen(
-                                  habit: h,
-                                  habitIndex: index,
-                                ),
-                              ),
-                            );
-                          },
-                          onCheck: () async {
-                            final confirm =
-                                await showDialog<bool>(
-                              context: context,
-                              builder: (_) =>
-                                  AlertDialog(
-                                title:
-                                    const Text("Confirm"),
-                                content: Text(
-                                    "Mark '${h['title']}' as completed today?"),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(
-                                            context,
-                                            false),
-                                    child:
-                                        const Text(
-                                            "Cancel"),
-                                  ),
-                                  ElevatedButton(
-                                    onPressed: () =>
-                                        Navigator.pop(
-                                            context,
-                                            true),
-                                    child:
-                                        const Text(
-                                            "Yes"),
-                                  ),
-                                ],
-                              ),
-                            );
-
-                            if (confirm == true) {
-                              markHabitAsDone(
-                                  index);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text("🎉 Habit completed! Great job!"),
-                                  duration: Duration(seconds: 2),
-                                ),
-                              );
-                            }
-                          },
-                        ),
-                      );
-                    }),
-                      ],
-                    ),
-
-                  /// Add Habit Button
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.add),
-                      label: const Text("Add Habit"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4CAF90),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      onPressed: () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) =>
-                                  const AddHabitScreen()),
-                        );
-                        setState(() {
-                          _profileFuture =
-                              _loadActiveProfile();
-                        });
-                      },
-                    ),
-                  ),
-
-                  const SizedBox(height: 10),
-                ],
-              ),
-            ),
-          );
-          },
+        child: TabBarView(
+          controller: _tabController,
+          children: [
+            // Tab 1: Habits
+            _buildHabitsTab(),
+            // Tab 2: Food Tracking
+            FoodTrackingScreen(language: currentLanguage),
+            // Tab 3: Analytics
+            const HabitAnalyticsScreen(),
+          ],
         ),
       ),
     );
   }
+
+  Widget _buildHabitsTab() {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _profileFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return const Center(child: Text('No active profile'));
+        }
+
+        final profile = snapshot.data!;
+        final habits = profile['habits'] ?? [];
+        final today = getTodayDate();
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                /// Greeting
+                Text(
+                  "Hello ${profile['name']} 🌿",
+                  style: const TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                /// Dashboard Stats
+                DashboardStats(
+                  streak: habits.fold(0, (max, h) => h['streak'] > max ? h['streak'] : max),
+                  level: 2,
+                  totalDays: habits.length,
+                ),
+                const SizedBox(height: 16),
+
+                WeeklyProgress(
+                  weekData: generateWeeklyProgress(profile["habits"]),
+                ),
+                const SizedBox(height: 16),
+
+                /// Quick Steps Input
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.directions_walk, color: Colors.blue.shade700),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '👟 Quick Steps Entry',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue.shade700,
+                                fontSize: 13,
+                              ),
+                            ),
+                            Text(
+                              'How many steps today?',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.blue.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.edit),
+                        label: const Text('Set'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                        onPressed: () {
+                          showDialog(
+                            context: context,
+                            builder: (ctx) {
+                              final controller = TextEditingController(text: '0');
+                              return AlertDialog(
+                                title: const Text('📝 Enter Steps for Today'),
+                                content: TextField(
+                                  controller: controller,
+                                  keyboardType: TextInputType.number,
+                                  decoration: const InputDecoration(
+                                    hintText: 'e.g., 5000 steps',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  autofocus: true,
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  ElevatedButton(
+                                    onPressed: () async {
+                                      final steps = int.tryParse(controller.text) ?? 0;
+                                      if (steps >= 0) {
+                                        await StepTrackerService.setManualSteps(steps);
+                                        if (mounted) {
+                                          Navigator.pop(ctx);
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text('✅ Steps saved: $steps'),
+                                              backgroundColor: Colors.green,
+                                              duration: const Duration(seconds: 2),
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    },
+                                    child: const Text('Save'),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                /// Habit Title
+                const Text(
+                  "Today's Habits",
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                /// Habit List
+                ListView(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    if (habits.isEmpty)
+                      const Text('No habits added yet')
+                    else
+                      ...habits.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final h = entry.value;
+                        final isDoneToday = h['completedDates'].contains(today);
+
+                        return Dismissible(
+                          key: ValueKey(h['id']),
+                          direction: DismissDirection.endToStart,
+                          background: Container(
+                            color: Colors.red,
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            child: const Icon(Icons.delete, color: Colors.white),
+                          ),
+                          confirmDismiss: (_) async {
+                            await deleteHabit(index);
+                            return false;
+                          },
+                          child: HabitCard(
+                            habitName: h['title'],
+                            streak: h['streak'],
+                            completed: isDoneToday,
+                            onTap: () async {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => HabitDetailScreen(
+                                    habit: h,
+                                    habitIndex: index,
+                                  ),
+                                ),
+                              );
+                            },
+                            onCheck: () async {
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (_) => AlertDialog(
+                                  title: const Text("Confirm"),
+                                  content: Text("Mark '${h['title']}' as completed today?"),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(context, false),
+                                      child: const Text("Cancel"),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: () => Navigator.pop(context, true),
+                                      child: const Text("Yes"),
+                                    ),
+                                  ],
+                                ),
+                              );
+
+                              if (confirm == true) {
+                                markHabitAsDone(index);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text("🎉 Habit completed! Great job!"),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                        );
+                      }),
+                  ],
+                ),
+
+                /// Add Habit Button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.add),
+                    label: const Text("Add Habit"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF4CAF90),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const AddHabitScreen()),
+                      );
+                      setState(() {
+                        _profileFuture = _loadActiveProfile();
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   List<bool> generateWeeklyProgress(List habits) {
 
     List<bool> weekData = [];
