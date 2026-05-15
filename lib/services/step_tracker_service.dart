@@ -65,13 +65,6 @@ class StepTrackerService {
       // Check if it's a new day
       await _checkAndResetForNewDay(profileId: profileId);
       
-      // Check if pedometer is available
-      final isPedometerAvailable = await Pedometer.isPedometerAvailable();
-      if (!isPedometerAvailable) {
-        print('⚠️ Pedometer not available on this device');
-        return;
-      }
-      
       // Request permission and start tracking
       _stepStream = Pedometer.stepCountStream;
       
