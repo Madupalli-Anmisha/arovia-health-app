@@ -229,7 +229,8 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
                         fiber = iceCreamData['fiber'];
                         foodType = iceCreamData['type'];
                       } else {
-                        final (cal, fib, type) = FoodService.getCaloriesAndFiberFromFoodName(foodName);
+                        // Use async version to fetch from online service if not in local DB
+                        final (cal, fib, type) = await FoodService.getCaloriesAndFiberFromFoodNameAsync(foodName);
                         calories = cal;
                         fiber = fib;
                         foodType = type;

@@ -56,35 +56,59 @@ class StepTrackerService {
     return "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
   }
 
-  // Initialize step tracking
-  static Future<void> initStepTracking() async {
+  // Initialize step tracking with proper error handling
+  static Future<void> initStepTracking({int retryCount = 0}) async {
     try {
-      print('📍 Initializing Step Tracker...');
+      print('📍 Initializing Step Tracker (Attempt ${retryCount + 1})...');
       final profileId = await getActiveProfileId();
       
       // Check if it's a new day
       await _checkAndResetForNewDay(profileId: profileId);
       
+      // Check if pedometer is available
+      final isPedometerAvailable = await Pedometer.isPedometerAvailable();
+      if (!isPedometerAvailable) {
+        print('⚠️ Pedometer not available on this device');
+        return;
+      }
+      
       // Request permission and start tracking
       _stepStream = Pedometer.stepCountStream;
       
+      int stepStreamCount = 0;
       _stepStream.listen(
         (StepCount event) async {
-          print('📊 Pedometer Data: ${event.steps} steps detected');
+          stepStreamCount++;
+          print('📊 Pedometer Data #$stepStreamCount: ${event.steps} steps detected');
           await _handleSensorSteps(event.steps, profileId: profileId);
         },
         onError: (error) {
-          print('❌ Pedometer Error: $error');
+          print('❌ Pedometer Stream Error: $error');
+          // Retry initialization after delay if stream fails
+          if (retryCount < 3) {
+            Future.delayed(Duration(seconds: 5), () {
+              initStepTracking(retryCount: retryCount + 1);
+            });
+          }
         },
+        cancelOnError: false, // Keep listening even if there are errors
       );
       
       print('✅ Step Tracker Initialized - Listening to pedometer...');
     } catch (e) {
       print('❌ Error initializing step tracking: $e');
+      // Retry with exponential backoff
+      if (retryCount < 3) {
+        final delaySeconds = (retryCount + 1) * 2;
+        print('⏱️ Retrying in ${delaySeconds} seconds...');
+        Future.delayed(Duration(seconds: delaySeconds), () {
+          initStepTracking(retryCount: retryCount + 1);
+        });
+      }
     }
   }
 
-  // Handle sensor step data
+  // Handle sensor step data with better filtering
   static Future<void> _handleSensorSteps(int sensorSteps, {String? profileId}) async {
     profileId ??= await getActiveProfileId();
     final prefs = await SharedPreferences.getInstance();
@@ -95,8 +119,12 @@ class StepTrackerService {
     // Calculate delta (new steps since last reading)
     final delta = sensorSteps - lastSensorSteps;
     
+    // Debug logging
+    print('🔍 Sensor Step Debug - Last: $lastSensorSteps, Current: $sensorSteps, Delta: $delta');
+    
     // Only process if positive delta (avoid backwards counts)
-    if (delta > 0) {
+    // Also avoid processing if delta is too large (could be sensor reset)
+    if (delta > 0 && delta < 50000) {
       // Get current step count for today
       final current = prefs.getInt(_getProfileKey(profileId)) ?? 0;
       final updated = current + delta;
@@ -106,6 +134,8 @@ class StepTrackerService {
       _todaySteps = updated;
       
       print('✅ Steps Updated: +$delta (Total today: $updated)');
+    } else if (delta >= 50000) {
+      print('⚠️ Ignoring large delta: $delta (possible sensor reset)');
     }
     
     // Always save the current sensor reading as baseline for next delta

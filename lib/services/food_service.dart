@@ -374,7 +374,18 @@ class FoodService {
         return (data['calories'] as int, data['fiber'] as int, data['type'] as String);
       }
 
+      // Try case-insensitive match in local database
+      final lowerName = foodName.toLowerCase();
+      for (var entry in foodDatabase.entries) {
+        if (entry.key.toLowerCase().contains(lowerName) ||
+            lowerName.contains(entry.key.toLowerCase())) {
+          var data = entry.value;
+          return (data['calories'] as int, data['fiber'] as int, data['type'] as String);
+        }
+      }
+
       // Try online service for foods not in local database
+      print('🌐 Fetching nutrition data from online service for: $foodName');
       final result = await OnlineCalorieService.searchFoodNutrition(foodName);
       if (result != null) {
         print('✅ Got online data for: $foodName - ${result['calories']} cal');
@@ -384,15 +395,17 @@ class FoodService {
           result['type'] as String,
         );
       }
+      
+      print('⚠️ Online service returned null for: $foodName, using smart detection');
     } catch (e) {
-      print('⚠️ Online service error, falling back to local: $e');
+      print('⚠️ Online service error, falling back to local detection: $e');
     }
 
-    // Fallback to local detection
+    // Fallback to local smart detection
     return getCaloriesAndFiberFromFoodName(foodName);
   }
 
-  // Detect if food is junk, healthy, or balanced based on keywords
+  // Detect if food is junk, healthy, or balanced based on keywords with better estimates
   static (int, int, String) _detectFoodTypeFromName(String foodName) {
     final lower = foodName.toLowerCase().trim();
     
@@ -416,23 +429,81 @@ class FoodService {
       'fish', 'chicken breast', 'turkey', 'lean', 'oat', 'wheat', 'whole',
       'nut', 'almond', 'walnut', 'healthy', 'organic', 'fresh',
     ];
+
+    // PROTEIN FOOD KEYWORDS
+    final proteinKeywords = [
+      'chicken', 'meat', 'beef', 'mutton', 'lamb', 'pork', 'fish',
+      'shrimp', 'crab', 'egg', 'tofu', 'paneer',
+    ];
+
+    // RICE/CARBS KEYWORDS
+    final riceKeywords = [
+      'rice', 'roti', 'chapati', 'bread', 'naan', 'paratha',
+      'biryani', 'pulao', 'khichdi', 'porridge', 'oats',
+    ];
     
-    // Check junk keywords first
+    // Check junk keywords first - typically 200-300 cal
     for (var keyword in junkKeywords) {
       if (lower.contains(keyword)) {
-        return (180, 0, 'junk'); // Junk: 180 cal, minimal fiber
+        // Refine estimate based on specific type
+        if (lower.contains('ice cream') || lower.contains('ice-cream')) {
+          return (150, 0, 'junk'); // Ice cream: lighter
+        } else if (lower.contains('burger') || lower.contains('pizza')) {
+          return (500, 2, 'junk'); // Heavy fast food
+        } else if (lower.contains('cake') || lower.contains('pastry')) {
+          return (300, 1, 'junk'); // Desserts
+        } else if (lower.contains('chips') || lower.contains('fries')) {
+          return (350, 2, 'junk'); // Fried snacks
+        } else {
+          return (220, 1, 'junk'); // Generic junk: 220 cal
+        }
       }
     }
     
-    // Check healthy keywords
+    // Check healthy keywords - typically 80-150 cal
     for (var keyword in healthyKeywords) {
       if (lower.contains(keyword)) {
-        return (120, 5, 'healthy'); // Healthy: 120 cal, more fiber
+        if (lower.contains('fruit') || lower.contains('apple') || lower.contains('banana')) {
+          return (95, 3, 'healthy'); // Fruits
+        } else if (lower.contains('salad')) {
+          return (120, 5, 'healthy'); // Salads
+        } else if (lower.contains('juice')) {
+          return (110, 2, 'healthy'); // Juices
+        } else {
+          return (100, 4, 'healthy'); // Other healthy: 100 cal
+        }
+      }
+    }
+
+    // Check protein keywords - typically 180-250 cal
+    for (var keyword in proteinKeywords) {
+      if (lower.contains(keyword)) {
+        if (lower.contains('chicken breast')) {
+          return (200, 0, 'balanced'); // Lean protein
+        } else if (lower.contains('fish')) {
+          return (210, 0, 'balanced'); // Fish
+        } else {
+          return (240, 0, 'balanced'); // Other meats
+        }
+      }
+    }
+
+    // Check rice/carbs keywords - typically 200-300 cal
+    for (var keyword in riceKeywords) {
+      if (lower.contains(keyword)) {
+        if (lower.contains('rice')) {
+          return (250, 2, 'balanced'); // Plain rice
+        } else if (lower.contains('biryani')) {
+          return (300, 2, 'balanced'); // Biryani (heavy)
+        } else {
+          return (200, 2, 'balanced'); // Other carbs
+        }
       }
     }
     
-    // Default to balanced for unknown foods
-    return (150, 2, 'balanced'); // Balanced: 150 cal, some fiber
+    // Default to balanced for unknown foods - 180 cal average
+    print('ℹ️ Using default detection for: $foodName');
+    return (180, 2, 'balanced');
   }
 
   // Get all available foods for autocomplete
