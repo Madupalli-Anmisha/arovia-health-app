@@ -162,6 +162,21 @@ class FoodService {
     'Coffee (1 cup)': {'calories': 40, 'fiber': 0, 'type': 'balanced'},
     'Soft Drink (1 can)': {'calories': 140, 'fiber': 0, 'type': 'junk'},
     'Coconut Water (1 cup)': {'calories': 45, 'fiber': 2, 'type': 'healthy'},
+    
+    // Additional - Beverages & Drinks
+    'Thickshake (1 cup)': {'calories': 220, 'fiber': 0, 'type': 'junk'},
+    'Milkshake (1 cup)': {'calories': 210, 'fiber': 1, 'type': 'junk'},
+    'Smoothie (1 cup)': {'calories': 150, 'fiber': 3, 'type': 'healthy'},
+    
+    // Additional - Fruits
+    'Papaya (1 cup)': {'calories': 55, 'fiber': 3, 'type': 'healthy'},
+    'Mango (1 medium)': {'calories': 100, 'fiber': 3, 'type': 'healthy'},
+    'Watermelon (1 cup)': {'calories': 46, 'fiber': 1, 'type': 'healthy'},
+    'Grapes (1 cup)': {'calories': 62, 'fiber': 1, 'type': 'healthy'},
+    'Guava (1 medium)': {'calories': 37, 'fiber': 3, 'type': 'healthy'},
+    'Pineapple (1 cup)': {'calories': 82, 'fiber': 2, 'type': 'healthy'},
+    'Strawberries (1 cup)': {'calories': 49, 'fiber': 3, 'type': 'healthy'},
+    'Blueberries (1 cup)': {'calories': 84, 'fiber': 4, 'type': 'healthy'},
   };
 
   // Get daily calorie goal (default 2000)
