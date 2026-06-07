@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/arovia_background.dart';
 import '../widgets/goal_chip.dart';
+import '../services/health_profile_service.dart';
 import 'home_screen.dart';
+import 'add_habit_screen.dart';
 class ProfileSetupScreen extends StatefulWidget {
   final bool isEdit;
   final String? userId;
@@ -42,6 +44,7 @@ class _ProfileSetupScreenState
   ];
 
   Set<String> selectedSuggestedHabits = {};
+  String selectedGender = 'other';
 
   /// 🏥 Health Conditions (NEW)
   final List<String> healthOptions = [
@@ -96,6 +99,7 @@ class _ProfileSetupScreenState
       selectedHealthConditions =
           List<String>.from(
               profile['healthConditions'] ?? []);
+      selectedGender = profile['gender']?.toString().toLowerCase() ?? 'other';
     });
   }
 
@@ -133,8 +137,7 @@ class _ProfileSetupScreenState
         "id": activeProfileId,
         "name": nameController.text.trim(),
         "age":
-            int.parse(ageController.text),
-        "goals": selectedGoals,
+            int.parse(ageController.text),        "gender": selectedGender,        "goals": selectedGoals,
         "healthConditions":
             selectedHealthConditions,
         "habits":
@@ -158,6 +161,7 @@ class _ProfileSetupScreenState
             nameController.text.trim(),
         "age":
             int.parse(ageController.text),
+        "gender": selectedGender,
         "goals": selectedGoals,
         "healthConditions":
             selectedHealthConditions,
@@ -190,6 +194,32 @@ class _ProfileSetupScreenState
 
     await prefs.setString(
         'profiles_$currentUserId', jsonEncode(profiles));
+
+    // Initialize health profile with default values
+    final profileId = widget.isEdit ? (activeProfileId ?? DateTime.now().millisecondsSinceEpoch.toString()) : DateTime.now().millisecondsSinceEpoch.toString();
+    final age = int.parse(ageController.text);
+    
+    final healthProfile = HealthProfile(
+      profileId: profileId,
+      age: age,
+      gender: 'other',
+      weight: 70,
+      height: 170,
+      activityLevel: 'moderate',
+      healthConditions: [],
+      allergies: [],
+      dietPreference: 'vegetarian',
+      targetCalories: HealthProfileService.calculateTDEE(
+        age: age,
+        gender: 'other',
+        weight: 70,
+        height: 170,
+        activityLevel: 'moderate',
+      ),
+      createdAt: DateTime.now(),
+    );
+    
+    await HealthProfileService.saveHealthProfile(healthProfile);
 
     Navigator.pushReplacement(
     context,
@@ -268,6 +298,52 @@ class _ProfileSetupScreenState
 
                 const SizedBox(height: 20),
 
+                /// GENDER
+                const Text(
+                  'Gender',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: RadioListTile<String>(
+                        title: const Text('Female'),
+                        value: 'female',
+                        groupValue: selectedGender,
+                        onChanged: (value) {
+                          setState(() => selectedGender = value ?? 'other');
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: RadioListTile<String>(
+                        title: const Text('Male'),
+                        value: 'male',
+                        groupValue: selectedGender,
+                        onChanged: (value) {
+                          setState(() => selectedGender = value ?? 'other');
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: RadioListTile<String>(
+                        title: const Text('Other'),
+                        value: 'other',
+                        groupValue: selectedGender,
+                        onChanged: (value) {
+                          setState(() => selectedGender = value ?? 'other');
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+
                 const SizedBox(height: 20),
 
                 /// GOALS
@@ -317,18 +393,51 @@ class _ProfileSetupScreenState
                 const SizedBox(height: 10),
 
                 ...suggestedHabits.map((habit) {
-                  return CheckboxListTile(
+                  final selected = selectedSuggestedHabits.contains(habit);
+                  return ListTile(
                     title: Text(habit),
-                    value: selectedSuggestedHabits.contains(habit),
-                    onChanged: (checked) {
-                      setState(() {
-                        if (checked == true) {
+                    leading: Checkbox(
+                      value: selected,
+                      onChanged: (checked) {
+                        setState(() {
+                          if (checked == true) {
+                            selectedSuggestedHabits.add(habit);
+                          } else {
+                            selectedSuggestedHabits.remove(habit);
+                          }
+                        });
+                      },
+                    ),
+                    trailing: ElevatedButton.icon(
+                      onPressed: () async {
+                        // Open AddHabitScreen with prefilled habit title so user can confirm/save
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AddHabitScreen(
+                              habit: {
+                                'title': habit,
+                                'frequency': 'Daily',
+                              },
+                            ),
+                          ),
+                        );
+
+                        // Ensure it's selected in the checklist after adding
+                        setState(() {
                           selectedSuggestedHabits.add(habit);
-                        } else {
-                          selectedSuggestedHabits.remove(habit);
-                        }
-                      });
-                    },
+                        });
+
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('✅ Added habit: $habit')),
+                        );
+                      },
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('Add'),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(64, 36),
+                      ),
+                    ),
                   );
                 }).toList(),
 

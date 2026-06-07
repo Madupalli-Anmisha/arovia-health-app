@@ -6,11 +6,13 @@ class StepTrackerService {
   static const String _stepsKey = 'daily_steps';
   static const String _dateKey = 'steps_date';
   static const String _stepHistoryKey = 'step_history';
-  static const String _sensorStepsKey = 'sensor_steps'; // Track sensor baseline
+  static const String _sensorStepsKey = 'sensor_steps';
+  static const String _isInitializedKey = 'steps_initialized';
   
-  static late Stream<StepCount> _stepStream;
+  static Stream<StepCount>? _stepStream;
   static int _todaySteps = 0;
-  static String _currentDate = '';
+  static int _lastSensorValue = 0;
+  static bool _isInitialized = false;
 
   // Get active profile ID
   static Future<String?> getActiveProfileId() async {
@@ -18,134 +20,135 @@ class StepTrackerService {
     return prefs.getString('activeProfileId');
   }
 
-  // Get profile-specific key for steps
   static String _getProfileKey(String? profileId) {
-    if (profileId == null || profileId.isEmpty) {
-      return _stepsKey;
-    }
+    if (profileId == null || profileId.isEmpty) return _stepsKey;
     return '${_stepsKey}_$profileId';
   }
 
-  // Get profile-specific key for date
   static String _getDateKey(String? profileId) {
-    if (profileId == null || profileId.isEmpty) {
-      return _dateKey;
-    }
+    if (profileId == null || profileId.isEmpty) return _dateKey;
     return '${_dateKey}_$profileId';
   }
 
-  // Get profile-specific key for sensor steps baseline
   static String _getSensorStepsKey(String? profileId) {
-    if (profileId == null || profileId.isEmpty) {
-      return _sensorStepsKey;
-    }
+    if (profileId == null || profileId.isEmpty) return _sensorStepsKey;
     return '${_sensorStepsKey}_$profileId';
   }
 
-  // Get profile-specific key for history
   static String _getHistoryKey(String? profileId) {
-    if (profileId == null || profileId.isEmpty) {
-      return _stepHistoryKey;
-    }
+    if (profileId == null || profileId.isEmpty) return _stepHistoryKey;
     return '${_stepHistoryKey}_$profileId';
   }
 
-  // Get today's date string
   static String _getTodayDateString() {
     final now = DateTime.now();
     return "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
   }
 
-  // Initialize step tracking with proper error handling
-  static Future<void> initStepTracking({int retryCount = 0}) async {
+  /// Initialize step tracking safely with fallback
+  static Future<void> initStepTracking({String? profileId}) async {
+    if (_isInitialized) return;
+    
     try {
-      print('📍 Initializing Step Tracker (Attempt ${retryCount + 1})...');
-      final profileId = await getActiveProfileId();
+      profileId ??= await getActiveProfileId();
+      print('📍 Initializing Step Tracker...');
       
-      // Check if it's a new day
       await _checkAndResetForNewDay(profileId: profileId);
       
-      // Request permission and start tracking
-      _stepStream = Pedometer.stepCountStream;
+      // Try to request permission first
+      _tryInitializePedometer(profileId: profileId);
       
-      int stepStreamCount = 0;
-      _stepStream.listen(
-        (StepCount event) async {
-          stepStreamCount++;
-          print('📊 Pedometer Data #$stepStreamCount: ${event.steps} steps detected');
-          await _handleSensorSteps(event.steps, profileId: profileId);
-        },
-        onError: (error) {
-          print('❌ Pedometer Stream Error: $error');
-          // Retry initialization after delay if stream fails
-          if (retryCount < 3) {
-            Future.delayed(Duration(seconds: 5), () {
-              initStepTracking(retryCount: retryCount + 1);
-            });
-          }
-        },
-        cancelOnError: false, // Keep listening even if there are errors
-      );
-      
-      print('✅ Step Tracker Initialized - Listening to pedometer...');
+      _isInitialized = true;
+      print('✅ Step Tracker Ready');
     } catch (e) {
-      print('❌ Error initializing step tracking: $e');
-      // Retry with exponential backoff
-      if (retryCount < 3) {
-        final delaySeconds = (retryCount + 1) * 2;
-        print('⏱️ Retrying in ${delaySeconds} seconds...');
-        Future.delayed(Duration(seconds: delaySeconds), () {
-          initStepTracking(retryCount: retryCount + 1);
-        });
-      }
+      print('⚠️ Step Tracker initialization error: $e (falling back to manual mode)');
+      _isInitialized = true;
     }
   }
 
-  // Handle sensor step data with better filtering
+  /// Try to initialize pedometer with proper error handling
+  static void _tryInitializePedometer({String? profileId}) {
+    try {
+      _stepStream = Pedometer.stepCountStream;
+      
+      _stepStream?.listen(
+        (StepCount event) async {
+          await _handleSensorSteps(event.steps, profileId: profileId);
+        },
+        onError: (error) async {
+          print('❌ Pedometer Error: $error');
+          // Retry after 5 seconds
+          await Future.delayed(Duration(seconds: 5));
+          _tryInitializePedometer(profileId: profileId);
+        },
+        cancelOnError: false,
+      );
+      
+      print('✅ Pedometer stream activated');
+    } catch (e) {
+      print('⚠️ Pedometer unavailable: $e (manual steps only)');
+    }
+  }
+
+  /// Handle incoming sensor step data
   static Future<void> _handleSensorSteps(int sensorSteps, {String? profileId}) async {
     profileId ??= await getActiveProfileId();
     final prefs = await SharedPreferences.getInstance();
     
-    // Get baseline from previous app start
-    final lastSensorSteps = prefs.getInt(_getSensorStepsKey(profileId)) ?? 0;
+    // On first reading, just store the sensor value as baseline
+    if (_lastSensorValue == 0) {
+      // Get the previously stored baseline from persistent storage
+      final storedBaseline = prefs.getInt(_getSensorStepsKey(profileId)) ?? 0;
+      
+      if (storedBaseline == 0) {
+        // First time ever - just set baseline
+        _lastSensorValue = sensorSteps;
+        await prefs.setInt(_getSensorStepsKey(profileId), sensorSteps);
+        print('📍 Step Sensor Baseline Set: $sensorSteps');
+        return;
+      } else {
+        // Restore previous baseline
+        _lastSensorValue = storedBaseline;
+      }
+    }
     
-    // Calculate delta (new steps since last reading)
-    final delta = sensorSteps - lastSensorSteps;
+    final delta = sensorSteps - _lastSensorValue;
     
-    // Debug logging
-    print('🔍 Sensor Step Debug - Last: $lastSensorSteps, Current: $sensorSteps, Delta: $delta');
-    
-    // Only process if positive delta (avoid backwards counts)
-    // Also avoid processing if delta is too large (could be sensor reset)
-    if (delta > 0 && delta < 50000) {
-      // Get current step count for today
+    // Validate delta (must be positive and reasonable, allow up to 20,000 steps in one reading)
+    if (delta > 0 && delta < 20000) {
       final current = prefs.getInt(_getProfileKey(profileId)) ?? 0;
       final updated = current + delta;
       
-      // Save updated steps
+      await prefs.setInt(_getProfileKey(profileId), updated);
+      await prefs.setInt(_getSensorStepsKey(profileId), sensorSteps);
+      _todaySteps = updated;
+      print('✅ Steps: +$delta (Total: $updated)');
+    } else if (delta < 0) {
+      // Sensor reset detected - happens when phone restarts or sensor resets
+      print('🔄 Sensor reset detected (delta: $delta, new baseline: $sensorSteps)');
+      // Add the absolute value since sensor was reset
+      final current = prefs.getInt(_getProfileKey(profileId)) ?? 0;
+      final updated = current + sensorSteps.abs();
+      
       await prefs.setInt(_getProfileKey(profileId), updated);
       _todaySteps = updated;
-      
-      print('✅ Steps Updated: +$delta (Total today: $updated)');
-    } else if (delta >= 50000) {
-      print('⚠️ Ignoring large delta: $delta (possible sensor reset)');
+      print('✅ After reset - Total: $updated');
+    } else if (delta == 0) {
+      print('ℹ️ No new steps');
     }
     
-    // Always save the current sensor reading as baseline for next delta
-    await prefs.setInt(_getSensorStepsKey(profileId), sensorSteps);
+    _lastSensorValue = sensorSteps;
   }
 
-  // Check and reset for new day
+  /// Check and reset steps for new day
   static Future<void> _checkAndResetForNewDay({String? profileId}) async {
     profileId ??= await getActiveProfileId();
     final prefs = await SharedPreferences.getInstance();
     final today = _getTodayDateString();
     final lastDate = prefs.getString(_getDateKey(profileId));
     
-    print('📅 Last Date: $lastDate, Today: $today');
-    
     if (lastDate != today) {
-      // New day - save yesterday's steps to history and reset
+      // Save yesterday's data and reset
       if (lastDate != null && lastDate.isNotEmpty) {
         final yesterdaySteps = prefs.getInt(_getProfileKey(profileId)) ?? 0;
         if (yesterdaySteps > 0) {
@@ -153,15 +156,13 @@ class StepTrackerService {
         }
       }
       
-      // Reset for new day
       await prefs.setInt(_getProfileKey(profileId), 0);
       await prefs.setInt(_getSensorStepsKey(profileId), 0);
       await prefs.setString(_getDateKey(profileId), today);
-      
       _todaySteps = 0;
-      print('🔄 New Day Reset: Steps = 0');
+      _lastSensorValue = 0;
+      print('🔄 New day - steps reset');
     } else {
-      // Same day - load existing steps
       _todaySteps = prefs.getInt(_getProfileKey(profileId)) ?? 0;
     }
   }

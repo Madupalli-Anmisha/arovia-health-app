@@ -182,7 +182,7 @@ class _HabitAnalyticsScreenState extends State<HabitAnalyticsScreen> {
                     const SizedBox(height: 12),
                     const SizedBox(height: 16),
                     
-                    // Manual step input (since sensor not available)
+                    // Automatic step tracking message
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -190,114 +190,18 @@ class _HabitAnalyticsScreenState extends State<HabitAnalyticsScreen> {
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: Colors.blue.shade300),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Row(
                         children: [
-                          Row(
-                            children: [
-                              Icon(Icons.info, color: Colors.blue.shade700),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  '📝 Enter your steps manually:',
-                                  style: TextStyle(
-                                    color: Colors.blue.shade700,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                  ),
-                                ),
+                          Icon(Icons.info, color: Colors.blue.shade700),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '👟 Steps are now captured automatically using device motion sensors. Manual step entry has been removed to keep tracking simple and reliable.',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.blue.shade700,
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  keyboardType: TextInputType.number,
-                                  decoration: InputDecoration(
-                                    hintText: 'Enter steps (e.g., 5000)',
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                  ),
-                                  onChanged: (value) {
-                                    // Store in temp for submission
-                                  },
-                                  controller: TextEditingController(
-                                    text: '${analytics['todaySteps']}',
-                                  ),
-                                  onSubmitted: (value) async {
-                                    final steps = int.tryParse(value) ?? 0;
-                                    if (steps > 0) {
-                                      await StepTrackerService.setManualSteps(steps);
-                                      setState(() {
-                                        _analyticsFuture = _loadAnalytics();
-                                      });
-                                    }
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              ElevatedButton.icon(
-                                icon: const Icon(Icons.check),
-                                label: const Text('Set'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blue,
-                                ),
-                                onPressed: () async {
-                                  showDialog(
-                                    context: context,
-                                    builder: (ctx) {
-                                      final controller = TextEditingController(text: '${analytics['todaySteps']}');
-                                      return AlertDialog(
-                                        title: const Text('📝 Enter Today\'s Steps'),
-                                        content: TextField(
-                                          controller: controller,
-                                          keyboardType: TextInputType.number,
-                                          decoration: const InputDecoration(
-                                            hintText: 'e.g., 5000',
-                                            border: OutlineInputBorder(),
-                                          ),
-                                        ),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () => Navigator.pop(ctx),
-                                            child: const Text('Cancel'),
-                                          ),
-                                          ElevatedButton(
-                                            onPressed: () async {
-                                              final steps = int.tryParse(controller.text) ?? 0;
-                                              if (steps >= 0) {
-                                                await StepTrackerService.setManualSteps(steps);
-                                                if (mounted) {
-                                                  setState(() {
-                                                    _analyticsFuture = _loadAnalytics();
-                                                  });
-                                                  Navigator.pop(ctx);
-                                                  ScaffoldMessenger.of(context).showSnackBar(
-                                                    SnackBar(
-                                                      content: Text('✅ Steps set to $steps'),
-                                                      duration: const Duration(seconds: 2),
-                                                    ),
-                                                  );
-                                                }
-                                              }
-                                            },
-                                            child: const Text('Save'),
-                                          ),
-                                        ],
-                                      );
-                                    },
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '💡 Tap field and enter total steps for today, then tap "Set"',
-                            style: TextStyle(fontSize: 11, color: Colors.blue.shade600),
+                            ),
                           ),
                         ],
                       ),

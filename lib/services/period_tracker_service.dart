@@ -79,9 +79,15 @@ class PeriodTrackerService {
     );
 
     entries.add(entry);
+    entries.sort((a, b) => a.date.compareTo(b.date));
     
     final jsonList = entries.map((e) => jsonEncode(e.toJson())).toList();
     await prefs.setStringList(key, jsonList);
+
+    final currentStart = await getCycleStart(profileId);
+    if (currentStart == null || entry.date.isAfter(currentStart)) {
+      await setCycleStart(entry.date, profileId);
+    }
   }
 
   /// Get all period entries
@@ -134,10 +140,14 @@ class PeriodTrackerService {
 
   /// Predict next period date
   static Future<DateTime?> predictNextPeriod(String? profileId) async {
-    final cycleStart = await getCycleStart(profileId);
+    DateTime? cycleStart = await getCycleStart(profileId);
     final cycleLength = await getCycleLength(profileId);
 
-    if (cycleStart == null) return null;
+    if (cycleStart == null) {
+      final entries = await getPeriodEntries(profileId);
+      if (entries.isEmpty) return null;
+      cycleStart = entries.reduce((a, b) => a.date.isAfter(b.date) ? a : b).date;
+    }
 
     DateTime nextPeriod = cycleStart;
     while (nextPeriod.isBefore(DateTime.now())) {
@@ -158,10 +168,14 @@ class PeriodTrackerService {
 
   /// Get current cycle phase (menstrual, follicular, ovulation, luteal)
   static Future<String> getCurrentPhase(String? profileId) async {
-    final cycleStart = await getCycleStart(profileId);
+    DateTime? cycleStart = await getCycleStart(profileId);
     final cycleLength = await getCycleLength(profileId);
 
-    if (cycleStart == null) return 'unknown';
+    if (cycleStart == null) {
+      final entries = await getPeriodEntries(profileId);
+      if (entries.isEmpty) return 'unknown';
+      cycleStart = entries.reduce((a, b) => a.date.isAfter(b.date) ? a : b).date;
+    }
 
     DateTime currentCycleStart = cycleStart;
     while (currentCycleStart.add(Duration(days: cycleLength)).isBefore(DateTime.now())) {

@@ -11,7 +11,7 @@ class PeriodTrackerScreen extends StatefulWidget {
 }
 
 class _PeriodTrackerScreenState extends State<PeriodTrackerScreen> {
-  late Future<Map<String, dynamic>> _statsFuture;
+  Future<Map<String, dynamic>> _statsFuture = Future.value({});
   DateTime? _nextPeriod;
   int? _daysUntil;
   String _currentPhase = 'unknown';
@@ -51,6 +51,7 @@ class _PeriodTrackerScreenState extends State<PeriodTrackerScreen> {
     String mood = 'neutral';
     String symptoms = '';
     String notes = '';
+    DateTime selectedDate = DateTime.now();
 
     showDialog(
       context: context,
@@ -62,8 +63,43 @@ class _PeriodTrackerScreenState extends State<PeriodTrackerScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Date selector
-                Text('Date: ${DateTime.now().toLocal().toString().split(' ')[0]}'),
+                // Date selector with date picker
+                Row(
+                  children: [
+                    const Text('Period Date: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: selectedDate,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now(),
+                          );
+                          if (picked != null) {
+                            setState(() => selectedDate = picked);
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.pink),
+                            borderRadius: BorderRadius.circular(8),
+                            color: Colors.pink.shade50,
+                          ),
+                          child: Text(
+                            '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.pinkAccent,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 16),
 
                 // Flow Intensity
@@ -74,6 +110,8 @@ class _PeriodTrackerScreenState extends State<PeriodTrackerScreen> {
                   max: 3,
                   divisions: 2,
                   label: flowIntensity == 1 ? 'Light' : flowIntensity == 2 ? 'Medium' : 'Heavy',
+                  activeColor: Colors.pink.shade400,
+                  inactiveColor: Colors.pink.shade200,
                   onChanged: (value) {
                     setState(() => flowIntensity = value.toInt());
                   },
@@ -89,6 +127,7 @@ class _PeriodTrackerScreenState extends State<PeriodTrackerScreen> {
                     return FilterChip(
                       label: Text(m),
                       selected: mood == val,
+                      selectedColor: Colors.pink.shade200,
                       onSelected: (selected) {
                         setState(() => mood = val);
                       },
@@ -129,9 +168,13 @@ class _PeriodTrackerScreenState extends State<PeriodTrackerScreen> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.pinkAccent,
+                foregroundColor: Colors.white,
+              ),
               onPressed: () async {
                 final entry = PeriodEntry(
-                  date: DateTime.now(),
+                  date: selectedDate,
                   flowIntensity: flowIntensity,
                   mood: mood,
                   symptoms: symptoms,
@@ -145,7 +188,7 @@ class _PeriodTrackerScreenState extends State<PeriodTrackerScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('✅ Period logged successfully!'),
-                    backgroundColor: Colors.green,
+                    backgroundColor: Colors.pinkAccent,
                   ),
                 );
               },
@@ -219,8 +262,6 @@ class _PeriodTrackerScreenState extends State<PeriodTrackerScreen> {
     switch (phase) {
       case 'menstrual':
         return '🔴';
-      case 'follicular':
-        return '🌱';
       case 'ovulation':
         return '💛';
       case 'luteal':
@@ -234,8 +275,6 @@ class _PeriodTrackerScreenState extends State<PeriodTrackerScreen> {
     switch (phase) {
       case 'menstrual':
         return 'Menstrual Phase';
-      case 'follicular':
-        return 'Follicular Phase';
       case 'ovulation':
         return 'Ovulation Phase';
       case 'luteal':
@@ -249,14 +288,12 @@ class _PeriodTrackerScreenState extends State<PeriodTrackerScreen> {
     switch (phase) {
       case 'menstrual':
         return 'Your period - take it easy and stay hydrated';
-      case 'follicular':
-        return 'Energy rising - great time for workouts';
       case 'ovulation':
         return 'Peak energy & confidence - go for it!';
       case 'luteal':
         return 'Slow down - focus on rest & nutrition';
       default:
-        return 'Track your cycle to get insights';
+        return 'Enter your first period start date to unlock next-cycle predictions and phase guidance.';
     }
   }
 
@@ -372,6 +409,35 @@ class _PeriodTrackerScreenState extends State<PeriodTrackerScreen> {
                     ],
                   ),
                 ),
+              )
+            else
+              Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                color: Colors.pink.shade50,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text(
+                        '📅 First Cycle Start Needed',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Log your first period start date above to begin predicting your next cycle and get month-long period guidance.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             const SizedBox(height: 16),
 
@@ -380,7 +446,8 @@ class _PeriodTrackerScreenState extends State<PeriodTrackerScreen> {
               icon: const Icon(Icons.add),
               label: const Text('Log Period Today'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.purple,
+                backgroundColor: Colors.pinkAccent,
+                foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 12),
               ),
               onPressed: _showAddPeriodDialog,
@@ -395,14 +462,14 @@ class _PeriodTrackerScreenState extends State<PeriodTrackerScreen> {
                   return const CircularProgressIndicator();
                 }
 
-                if (!snapshot.hasData || snapshot.data == null) {
+                if (!snapshot.hasData || snapshot.data == null || snapshot.data!.isEmpty) {
                   return Center(
                     child: Column(
                       children: [
-                        const Icon(Icons.favorite_outline, size: 48, color: Colors.grey),
+                        const Icon(Icons.calendar_month_outlined, size: 48, color: Colors.grey),
                         const SizedBox(height: 12),
                         const Text(
-                          'Start tracking your period to see insights',
+                          'Log your first period start date to unlock tracking insights and cycle predictions.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: Colors.grey),
                         ),

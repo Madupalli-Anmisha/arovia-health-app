@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/arovia_background.dart';
@@ -143,7 +144,7 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
             scheduledTime: scheduledTime,
           );
         } catch (notifError) {
-          print('Notification error: $notifError');
+          developer.log('Notification error: $notifError');
           // Continue anyway - notification is optional
         }
       }
@@ -158,7 +159,7 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
         Navigator.pop(context);
       }
     } catch (e) {
-      print('Error saving habit: $e');
+      developer.log('Error saving habit: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),

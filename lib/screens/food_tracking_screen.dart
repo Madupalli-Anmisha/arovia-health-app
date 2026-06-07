@@ -1,12 +1,14 @@
 import 'dart:io';
+import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 import '../services/food_service.dart';
-import '../services/food_recognition_service.dart';
+import '../services/health_profile_service.dart';
 import '../services/smart_notification_service.dart';
-import '../services/meal_plan_service.dart';
 import '../services/language_service.dart';
+import '../services/food_recognition_service.dart';
+import '../widgets/personalized_suggestion_card.dart';
 import 'weekly_report_screen.dart';
 import 'personal_records_screen.dart';
 
@@ -23,37 +25,73 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
   List<FoodEntry> todayEntries = [];
   int todayCalories = 0;
   int todayFiber = 0;
-  int junkCalories = 0;
+  int todaySteps = 0;
   int dailyGoal = 2000;
-  int fiberGoal = 25;
-  String nutritionAdvice = '';
+  HealthProfile? healthProfile;
   final ImagePicker _imagePicker = ImagePicker();
   late String currentLanguage;
+  int junkCalories = 0;
+  String nutritionAdvice = '✅ Keep up the healthy eating!';
 
   @override
   void initState() {
     super.initState();
     currentLanguage = widget.language;
     _loadData();
-    _initNotifications();
-  }
-
-  Future<void> _initNotifications() async {
-    await SmartNotificationService.initializeNotifications();
   }
 
   Future<void> _loadData() async {
-    final entries = await FoodService.getTodayEntries();
-    final calories = await FoodService.getTodayCalories();
-    final goal = await FoodService.getDailyGoal();
-    final advice = await FoodService.getNutritionAdvice();
+    try {
+      healthProfile = await HealthProfileService.getProfile();
+      todayEntries = await FoodService.getTodayEntries();
+      
+      todayCalories = todayEntries.fold(0, (sum, entry) => sum + entry.calories);
+      todayFiber = todayEntries.fold(0, (sum, entry) => sum + entry.fiber);
+      junkCalories = todayEntries
+          .where((e) => e.foodType == 'junk')
+          .fold(0, (sum, entry) => sum + entry.calories);
+      
+      // Update nutrition advice based on intake
+      if (todayCalories > dailyGoal) {
+        nutritionAdvice = '⚠️ You\'ve exceeded your daily goal. Consider lighter meals for dinner.';
+      } else if (todayCalories > dailyGoal * 0.8) {
+        nutritionAdvice = '🎯 Almost there! You\'re ${ (dailyGoal - todayCalories).toStringAsFixed(0)} kcal away from your goal.';
+      } else {
+        nutritionAdvice = '✅ Keep up the healthy eating!';
+      }
+      
+      if (healthProfile != null) {
+        dailyGoal = healthProfile!.targetCalories;
+      }
+      
+      setState(() {});
+    } catch (e) {
+      developer.log('Error loading data: $e');
+    }
+  }
 
-    setState(() {
-      todayEntries = entries;
-      todayCalories = calories;
-      dailyGoal = goal;
-      nutritionAdvice = advice;
-    });
+  void _showMealPlanDialog({
+    required String food,
+    required int calories,
+    required int newTotal,
+  }) async {
+    if (healthProfile == null) return;
+    
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: PersonalizedSuggestionCard(
+          foodConsumed: food,
+          caloriesConsumed: calories,
+          dailyCalorieGoal: healthProfile!.targetCalories,
+          totalCaloriesToday: newTotal,
+          healthProfile: healthProfile!,
+          onDismiss: () => Navigator.pop(context),
+        ),
+      ),
+    );
   }
 
   Future<void> _addFoodFromCamera() async {
@@ -84,7 +122,6 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
   void _showFoodDialog(String? imagePath) {
     final foodController = TextEditingController();
     final quantityController = TextEditingController(text: '1');
-    String selectedFood = '';
     String foodName = '';
 
     // Food categories
@@ -164,7 +201,6 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
                                   subtitle: Text('${data?['calories'] ?? 0} cal', style: const TextStyle(fontSize: 11)),
                                   onTap: () {
                                     setState(() {
-                                      selectedFood = food;
                                       foodController.text = food;
                                       foodName = food;
                                     });
@@ -184,7 +220,6 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
                                 subtitle: Text('${data?['calories'] ?? 0} cal', style: const TextStyle(fontSize: 11)),
                                 onTap: () {
                                   setState(() {
-                                    selectedFood = food;
                                     foodController.text = food;
                                     foodName = food;
                                   });
@@ -201,9 +236,67 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
                   const SizedBox(height: 8),
                   TextField(
                     controller: quantityController,
+                    onChanged: (val) {
+                      setState(() {}); // Trigger rebuild to update calorie summary
+                    },
                     decoration: const InputDecoration(
                       hintText: 'e.g., 1, 2 scoops',
                       border: OutlineInputBorder(),
+                    ),
+                  ),
+                  
+                  // Calorie Summary
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Selected: $foodName',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Calories: ${_getFoodData(foodName)?['calories'] ?? 0} cal per serving',
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                            Text(
+                              'Qty: ${quantityController.text}',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.blue,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Total for today:',
+                                style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold),
+                              ),
+                              Text(
+                                '${todayCalories + (_getFoodData(foodName)?['calories'] ?? 0)} / $dailyGoal cal',
+                                style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -253,7 +346,11 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
 
                         if (foodType == 'junk') {
                           await SmartNotificationService.sendJunkFoodNotification(foodName, calories);
-                          _showMealPlanDialog();
+                          _showMealPlanDialog(
+                            food: foodName,
+                            calories: calories,
+                            newTotal: todayCalories + calories,
+                          );
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text('✅ Added: $foodName ($calories cal)'),
@@ -376,6 +473,61 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
                       border: OutlineInputBorder(),
                     ),
                   ),
+                  
+                  // Calorie Summary for manual add
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Selected: $foodName',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Calories: ${FoodService.foodDatabase[foodName]?['calories'] ?? 200} cal',
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                            Text(
+                              'Qty: ${quantityController.text}',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.green,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Total today:',
+                                style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold),
+                              ),
+                              Text(
+                                '${todayCalories + (FoodService.foodDatabase[foodName]?['calories'] ?? 200)} / $dailyGoal cal',
+                                style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -435,7 +587,11 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
                             );
                             
                             // Show meal plan dialog
-                            _showMealPlanDialog();
+                            _showMealPlanDialog(
+                              food: foodName,
+                              calories: calories,
+                              newTotal: todayCalories + calories,
+                            );
 
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
@@ -455,7 +611,7 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
                           }
                         }
                       } catch (e) {
-                        print('Error adding food: $e');
+                        developer.log('Error adding food: $e');
                         if (mounted) {
                           Navigator.pop(context); // Close loading dialog
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -478,39 +634,6 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
   Future<void> _deleteFoodEntry(FoodEntry entry) async {
     await FoodService.deleteFoodEntry(entry.id);
     _loadData();
-  }
-
-  void _showMealPlanDialog() async {
-    final mealPlan = await MealPlanService.createDailyMealPlan(
-      junkCaloriesEaten: junkCalories,
-      currentFiber: todayFiber,
-      totalCaloriesEaten: todayCalories,
-    );
-
-    if (mounted) {
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('📋 Daily Meal Plan'),
-          content: SingleChildScrollView(
-            child: SelectableText(
-              mealPlan,
-              style: const TextStyle(
-                fontFamily: 'Courier',
-                fontSize: 12,
-                height: 1.6,
-              ),
-            ),
-          ),
-          actions: [
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK, Got it!'),
-            ),
-          ],
-        ),
-      );
-    }
   }
 
   @override
@@ -661,7 +784,7 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
                       icon: const Icon(Icons.bar_chart),
                       label: const Text('📊 Weekly'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue[700],
+                        backgroundColor: Colors.grey[700],
                       ),
                     ),
                   ),
@@ -677,7 +800,7 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
                       icon: const Icon(Icons.emoji_events),
                       label: const Text('🏆 Records'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange[700],
+                        backgroundColor: Colors.grey[700],
                       ),
                     ),
                   ),
@@ -703,7 +826,7 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
                       label: Text(LanguageService.translate('take_photo', currentLanguage)),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 12),
-                        backgroundColor: Colors.green,
+                        backgroundColor: Colors.blue,
                       ),
                     ),
                   ),
@@ -730,7 +853,7 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
                   label: Text(LanguageService.translate('add_manual', currentLanguage)),
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    backgroundColor: Colors.purple,
+                    backgroundColor: Colors.green,
                   ),
                 ),
               ),
@@ -793,6 +916,86 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class FoodEntryCard extends StatelessWidget {
+  final FoodEntry entry;
+  final VoidCallback onDelete;
+
+  const FoodEntryCard({
+    super.key,
+    required this.entry,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final foodTypeColor = entry.foodType == 'healthy'
+        ? Colors.green
+        : entry.foodType == 'junk'
+            ? Colors.red
+            : Colors.orange;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Container(
+              width: 4,
+              height: 60,
+              decoration: BoxDecoration(
+                color: foodTypeColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    entry.foodName,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Text(
+                        '${entry.calories} cal',
+                        style: TextStyle(
+                          color: foodTypeColor,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        '${entry.fiber}g fiber',
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, size: 20),
+              onPressed: onDelete,
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
         ),
       ),
     );

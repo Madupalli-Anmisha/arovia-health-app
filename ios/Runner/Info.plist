@@ -49,5 +49,7 @@
 	<string>This app needs camera access to take photos of food for nutrition tracking.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>This app needs photo library access to select food photos for nutrition tracking.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>This app needs access to your motion data to track your daily steps and activities.</string>
 </dict>
 </plist>

@@ -1,5 +1,6 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 class OnlineCalorieService {
   // Using USDA FoodData Central API (free, no API key needed for basic queries)

@@ -15,6 +15,7 @@ import '../widgets/habit_card.dart';
 import '../widgets/weekly_progress.dart';
 import '../services/language_service.dart';
 import '../services/step_tracker_service.dart';
+import '../services/enhanced_step_tracker_service.dart';
 import '../services/food_service.dart';
 import '../services/weekly_report_service.dart';
 
@@ -29,6 +30,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late Future<Map<String, dynamic>> _profileFuture;
   late TabController _tabController;
   String currentLanguage = 'en';
+  String userGender = 'other'; // Track user gender for period tracker visibility
 
   @override
   void initState() {
@@ -36,8 +38,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _profileFuture = _loadActiveProfile();
     _tabController = TabController(length: 3, vsync: this);
     _loadLanguage();
+    _loadUserGender();
     // Save daily data in background (non-blocking)
     Future.delayed(const Duration(milliseconds: 500), _saveDailyData);
+  }
+
+  // Load user gender to conditionally show period tracker
+  Future<void> _loadUserGender() async {
+    final profile = await _loadActiveProfile();
+    final gender = profile['gender']?.toString().toLowerCase() ?? 'other';
+    setState(() {
+      userGender = gender;
+    });
   }
 
   // Save daily tracking data to analytics
@@ -372,9 +384,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
         bottom: TabBar(
           controller: _tabController,
-          labelColor: Colors.green,
+          labelColor: const Color(0xFF2D7A4A),
           unselectedLabelColor: Colors.grey,
-          indicatorColor: Colors.green,
+          indicatorColor: const Color(0xFF2D7A4A),
           tabs: const [
             Tab(icon: Icon(Icons.check_circle), text: 'Habits'),
             Tab(icon: Icon(Icons.restaurant), text: 'Food'),
@@ -384,19 +396,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
         actions: [
 
-          /// � Period Tracker
-          IconButton(
-            icon: const Icon(Icons.favorite),
-            tooltip: "Period Tracker",
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const PeriodTrackerScreen(),
-                ),
-              );
-            },
-          ),
+          /// Period Tracker - Only for women
+          if (userGender.toLowerCase().contains('female') || userGender.toLowerCase().contains('woman'))
+            IconButton(
+              icon: const Icon(Icons.calendar_month),
+              tooltip: "Period Tracker",
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const PeriodTrackerScreen(),
+                  ),
+                );
+              },
+            ),
 
           /// �🌐 Language
           IconButton(
@@ -420,8 +433,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
               setState(() {
                 _profileFuture = _loadActiveProfile();
-              });
-            },
+              });              _loadUserGender();            },
           ),
 
           /// 🗑 Delete Profile
@@ -513,9 +525,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
                 const SizedBox(height: 16),
 
-                /// Quick Steps Input
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
                     color: Colors.blue.shade50,
                     borderRadius: BorderRadius.circular(12),
@@ -530,15 +541,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '👟 Quick Steps Entry',
+                              '👟 Automatic Step Tracking',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: Colors.blue.shade700,
                                 fontSize: 13,
                               ),
                             ),
+                            const SizedBox(height: 4),
                             Text(
-                              'How many steps today?',
+                              'Steps are tracked automatically from your device sensors. Manual entry has been removed for a cleaner experience.',
                               style: TextStyle(
                                 fontSize: 11,
                                 color: Colors.blue.shade600,
@@ -546,59 +558,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             ),
                           ],
                         ),
-                      ),
-                      ElevatedButton.icon(
-                        icon: const Icon(Icons.edit),
-                        label: const Text('Set'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        ),
-                        onPressed: () {
-                          showDialog(
-                            context: context,
-                            builder: (ctx) {
-                              final controller = TextEditingController(text: '0');
-                              return AlertDialog(
-                                title: const Text('📝 Enter Steps for Today'),
-                                content: TextField(
-                                  controller: controller,
-                                  keyboardType: TextInputType.number,
-                                  decoration: const InputDecoration(
-                                    hintText: 'e.g., 5000 steps',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  autofocus: true,
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx),
-                                    child: const Text('Cancel'),
-                                  ),
-                                  ElevatedButton(
-                                    onPressed: () async {
-                                      final steps = int.tryParse(controller.text) ?? 0;
-                                      if (steps >= 0) {
-                                        await StepTrackerService.setManualSteps(steps);
-                                        if (mounted) {
-                                          Navigator.pop(ctx);
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: Text('✅ Steps saved: $steps'),
-                                              backgroundColor: Colors.green,
-                                              duration: const Duration(seconds: 2),
-                                            ),
-                                          );
-                                        }
-                                      }
-                                    },
-                                    child: const Text('Save'),
-                                  ),
-                                ],
-                              );
-                            },
-                          );
-                        },
                       ),
                     ],
                   ),
@@ -751,3 +710,4 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return weekData;
   }
 }
+
